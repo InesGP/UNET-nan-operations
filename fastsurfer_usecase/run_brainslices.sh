@@ -4,24 +4,36 @@
 #SBATCH --ntasks-per-node=5
 #SBATCH --nodes=1
 #SBATCH --time=5:0:0
-#SBATCH --array=18,83
-#SBATCH --account=rrg-glatard
+#SBATCH --array=0-255
+#SBATCH --account=ACCOUNT
 #SBATCH --output=slurm/%x_%a.out
 #SBATCH --mail-type=ALL 
-#SBATCH --mail-user=inesgp99@gmail.com
+#SBATCH --mail-user=EMAIL
 
-# export OMP_NUM_THREADS=1
-# export NUMPEXPR_NUM_THREADS=1
-# export OPENBLAS_NUM_THREADS=1
 
 module load apptainer/1.2
 
-# parallel < /scratch/ine5/fastsurfer_embeddings/fastsurfer-embeddings/embedding_project/allsub_sagittal.txt
+parallel "{} > allsubs_skipconv/thresh05/10subs/coronal_{#}_${SLURM_ARRAY_TASK_ID}.log 2>&1" :::: allsub_axial.txt
 
-parallel "{} > allsubs_skipconv/thresh05/10subs/coronal_{#}_${SLURM_ARRAY_TASK_ID}.log 2>&1" :::: /scratch/ine5/fastsurfer_embeddings/fastsurfer-embeddings/embedding_project/allsub_sagittal.txt
-#command: apptainer exec --nv --env EMBEDDING_LAYER='inp_block' --env BRAIN_VIEW='coronal' --env BRAIN_SLICE_INDEX=${SLURM_ARRAY_TASK_ID} --env THRESHOLD=1 --env NANCONV_THRESHOLD=1 --env NAN_ACTIVE=false --env MULTI_MAXVAL=1 --env NAN_PROB=false --env NAN_PROBVAL=1 -B license.txt:/fs_license/license.txt -B /home/ine5/projects/def-glatard/ine5/fs_subject_ieee/sub-0025350/mri/:/data -B nan_ops.py:/fastsurfer/FastSurferCNN/models/nan_ops.py -B /scratch/ine5/fastsurfer_embeddings/results/cpptorch/0025350/:/output -B inf_model.py:/fastsurfer/FastSurferCNN/inference.py -B networks.py:/fastsurfer/FastSurferCNN/models/networks.py -B sub_module.py:/fastsurfer/FastSurferCNN/models/sub_module.py -B dataset.py:/fastsurfer/FastSurferCNN/data_loader/dataset.py -B run_prediction.py:/fastsurfer/FastSurferCNN/run_prediction.py /scratch/ine5/nan_fastsurfer2.sif time python /fastsurfer/FastSurferCNN/run_prediction.py --t1 /data/norm.mgz --sd /output --device cpu
-# IEEE Fastsurfer command: apptainer exec --nv --env EMBEDDING_LAYER='inp_block' --env BRAIN_VIEW='axial' --env BRAIN_SLICE_INDEX=$SLURM_ARRAY_TASK_ID --env NANCONV_THRESHOLD=ieee --env NAN_ACTIVE=false --env MULTI_MAXVAL=1 --env NAN_PROB=true --env NAN_PROBVAL=1 -B /home/ine5/projects/def-glatard/ine5/fs_subject_ieee/sub-0025531/mri/:/data -B nan_ops.py:/fastsurfer/FastSurferCNN/models/nan_ops.py -B ../../results/cpptorch/0025531/ieee/:/output -B inference.py:/fastsurfer/FastSurferCNN/inference.py -B networks_unpool.py:/fastsurfer/FastSurferCNN/models/networks.py -B dataset.py:/fastsurfer/FastSurferCNN/data_loader/dataset.py -B run_prediction.py:/fastsurfer/FastSurferCNN/run_prediction.py /scratch/rprasann/test_fastsurfer_1.1.0/verrou_fastsurfer_2_1_1_perturbation.sif time python /fastsurfer/FastSurferCNN/run_prediction.py --t1 /data/norm.mgz --sd /output --device cpu
+# NaN Fastsurfer command: 
+# apptainer exec --nv --env BRAIN_VIEW='coronal' --env BRAIN_SLICE_INDEX=${SLURM_ARRAY_TASK_ID} --env THRESHOLD=1 --env NANCONV_THRESHOLD=1 \
+# --env NAN_ACTIVE=false --env MULTI_MAXVAL=1 --env NAN_PROB=false --env NAN_PROBVAL=1 -B license.txt:/fs_license/license.txt \
+# -B ~/fs_subject_ieee/sub-0025350/mri/:/data -B nan_ops.py:/fastsurfer/FastSurferCNN/models/nan_ops.py \
+# -B results/cpptorch/0025350/:/output -B inference.py:/fastsurfer/FastSurferCNN/inference.py \
+# -B networks.py:/fastsurfer/FastSurferCNN/models/networks.py -B sub_module.py:/fastsurfer/FastSurferCNN/models/sub_module.py \
+# -B run_prediction.py:/fastsurfer/FastSurferCNN/run_prediction.py \
+# nan_fastsurfer2.sif time python /fastsurfer/FastSurferCNN/run_prediction.py --t1 /data/norm.mgz --sd /output --device cpu
 
+# Default Fastsurfer command: 
+# apptainer exec --nv --env BRAIN_VIEW='axial' --env BRAIN_SLICE_INDEX=$SLURM_ARRAY_TASK_ID --env NANCONV_THRESHOLD=ieee \
+# --env NAN_ACTIVE=false --env MULTI_MAXVAL=1 --env NAN_PROB=true --env NAN_PROBVAL=1 \
+# -B ~/fs_subject_ieee/sub-0025531/mri/:/data -B nan_ops.py:/fastsurfer/FastSurferCNN/models/nan_ops.py \
+# -B results/cpptorch/0025531/ieee/:/output -B inference.py:/fastsurfer/FastSurferCNN/inference.py \
+# -B networks.py:/fastsurfer/FastSurferCNN/models/networks.py -B run_prediction.py:/fastsurfer/FastSurferCNN/run_prediction.py \
+# verrou_fastsurfer_2_1_1_perturbation.sif \
+# time python /fastsurfer/FastSurferCNN/run_prediction.py --t1 /data/norm.mgz --sd /output --device cpu
+
+#OLD POTENTIAL OUT OF DATE COMMANDS FOR DIFFERENT EXPERIMENTS ex: single brain slice, etc.
 
 # threshold_vals=(
 #     0
