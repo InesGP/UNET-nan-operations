@@ -242,7 +242,11 @@ class Inference:
 
             out[tuple(ii)].add_(pred, alpha=self.alpha.get(plane, 0.4))
             # start_index = end_index
-            pickle.dump({"index": tuple(ii), "slice": pred}, open(f"/output/{self.get_plane()}/{os.environ['BRAIN_SLICE_INDEX']}_slice.pkl", "wb"))
+            if '.' in os.environ['THRESHOLD']:
+                thresh = "".join(os.environ['THRESHOLD'].split('.'))
+                pickle.dump({"index": tuple(ii), "slice": pred}, open(f"/output/{self.get_plane()}/thresh{thresh}/{os.environ['BRAIN_SLICE_INDEX']}_slice.pkl", "wb"))
+            else:
+                pickle.dump({"index": tuple(ii), "slice": pred}, open(f"/output/{self.get_plane()}/thresh{os.environ['THRESHOLD']}/{os.environ['BRAIN_SLICE_INDEX']}_slice.pkl", "wb"))
 
             # pickle.dump({"index": tuple(ii), "slice": pred}, open(f"/output/{self.get_plane()}/{os.environ['BRAIN_SLICE_INDEX']}_slice.pkl", "wb"))
             # pickle.dump({"index": tuple(ii), "slice": pred}, open(f"/output/{os.environ['BRAIN_SLICE_INDEX']}_slice.pkl", "wb"))
@@ -254,6 +258,13 @@ class Inference:
             for i in range(256):
                 
                 a=pickle.load(open(f'/output/{self.get_plane()}/{i}_slice.pkl', 'rb'))
+                # if '.' in os.environ['THRESHOLD']:
+                #     thresh = "".join(os.environ['THRESHOLD'].split('.'))
+                #     a=pickle.load(open(f"/output/{self.get_plane()}/thresh{thresh}/{i}_slice.pkl", 'rb'))
+
+                # else:
+                #     a=pickle.load(open(f"/output/{self.get_plane()}/thresh{os.environ['THRESHOLD']}/{i}_slice.pkl", 'rb'))
+
                 # a=pickle.load(open(f'/output/{i}_slice.pkl', 'rb'))
 
                 if i == 0: 
