@@ -1,0 +1,65 @@
+0.75
+/home/inesgp/mnist/nan_mnist_test_kfold.py:212: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  model.load_state_dict(torch.load(args.model_path))
+0.75
+Fold 1/5
+Conv1: 0.0
+Conv2: 0.36015816326530614 70591 196000
+Conv3: 0.08987755102040816
+Conv4: 0.0
+Conv1: 0.0
+Conv2: 0.3399234693877551 66625 196000
+Conv3: 0.07679591836734694
+Conv4: 0.0
+
+Test set: Average loss: 0.0721, Accuracy: 1964/2000 (98.20%)
+
+Fold 2/5
+Conv1: 0.0
+Conv2: 0.3691530612244898 72354 196000
+Conv3: 0.09802040816326531
+Conv4: 0.0
+Conv1: 0.0
+Conv2: 0.34069387755102043 66776 196000
+Conv3: 0.07761224489795919
+Conv4: 0.0
+
+Test set: Average loss: 0.0996, Accuracy: 1952/2000 (97.60%)
+
+Fold 3/5
+Conv1: 0.0
+Conv2: 0.3644387755102041 71430 196000
+Conv3: 0.09375510204081633
+Conv4: 0.0
+Conv1: 0.0
+Conv2: 0.33798979591836736 66246 196000
+Conv3: 0.07822448979591837
+Conv4: 0.0
+
+Test set: Average loss: 0.0685, Accuracy: 1965/2000 (98.25%)
+
+Fold 4/5
+Conv1: 0.0
+Conv2: 0.3604591836734694 70650 196000
+Conv3: 0.09128571428571429
+Conv4: 0.0
+Conv1: 0.0
+Conv2: 0.3436887755102041 67363 196000
+Conv3: 0.08028571428571428
+Conv4: 0.0
+
+Test set: Average loss: 0.0698, Accuracy: 1966/2000 (98.30%)
+
+Fold 5/5
+Conv1: 0.0
+Conv2: 0.3686938775510204 72264 196000
+Conv3: 0.10018367346938775
+Conv4: 0.0
+Conv1: 0.0
+Conv2: 0.3402142857142857 66682 196000
+Conv3: 0.07740816326530613
+Conv4: 0.0
+
+Test set: Average loss: 0.0762, Accuracy: 1966/2000 (98.30%)
+
+Cross-Validation Mean Accuracy: 98.13%

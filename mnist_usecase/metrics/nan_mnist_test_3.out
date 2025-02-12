@@ -1,0 +1,65 @@
+0.65
+/home/inesgp/mnist/nan_mnist_test_kfold.py:212: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  model.load_state_dict(torch.load(args.model_path))
+0.65
+Fold 1/5
+Conv1: 0.0
+Conv2: 0.5682448979591836 111376 196000
+Conv3: 0.2965510204081633
+Conv4: 0.003777777777777778
+Conv1: 0.0
+Conv2: 0.5459744897959183 107011 196000
+Conv3: 0.2692857142857143
+Conv4: 0.003777777777777778
+
+Test set: Average loss: 0.2695, Accuracy: 1871/2000 (93.55%)
+
+Fold 2/5
+Conv1: 0.0
+Conv2: 0.5765459183673469 113003 196000
+Conv3: 0.3083469387755102
+Conv4: 0.006111111111111111
+Conv1: 0.0
+Conv2: 0.5475969387755102 107329 196000
+Conv3: 0.2772857142857143
+Conv4: 0.004111111111111111
+
+Test set: Average loss: inf, Accuracy: 1840/2000 (92.00%)
+
+Fold 3/5
+Conv1: 0.0
+Conv2: 0.57075 111867 196000
+Conv3: 0.30206122448979594
+Conv4: 0.005111111111111111
+Conv1: 0.0
+Conv2: 0.5431938775510204 106466 196000
+Conv3: 0.2713265306122449
+Conv4: 0.0038888888888888888
+
+Test set: Average loss: inf, Accuracy: 1854/2000 (92.70%)
+
+Fold 4/5
+Conv1: 0.0
+Conv2: 0.5680918367346939 111346 196000
+Conv3: 0.2956326530612245
+Conv4: 0.006222222222222222
+Conv1: 0.0
+Conv2: 0.5491785714285714 107639 196000
+Conv3: 0.2720612244897959
+Conv4: 0.004222222222222222
+
+Test set: Average loss: inf, Accuracy: 1851/2000 (92.55%)
+
+Fold 5/5
+Conv1: 0.0
+Conv2: 0.5763469387755102 112964 196000
+Conv3: 0.30895918367346936
+Conv4: 0.0047777777777777775
+Conv1: 0.0
+Conv2: 0.5455102040816326 106920 196000
+Conv3: 0.27393877551020407
+Conv4: 0.006
+
+Test set: Average loss: inf, Accuracy: 1849/2000 (92.45%)
+
+Cross-Validation Mean Accuracy: 92.65%
