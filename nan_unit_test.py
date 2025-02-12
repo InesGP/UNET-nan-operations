@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torch.nn.functional import max_pool2d
 import numpy as np
 import unittest
 import os
@@ -957,6 +958,435 @@ class TestNaNConv2d(unittest.TestCase):
         self.assertTrue(fail/n < self.nonan_fault_tolerance, f"NanConv no nans Test failed: Torch and NaNConv convolutions do not match for padding=1 and stride=3 for over {self.nonan_fault_tolerance*100}% of the time with a relative tolerance of 5e-04.")
         print(f"NanConv no nans Test passed: Torch and NaNConv convolutions match for padding=1 and stride=3 within relative tolerance of 5e-04 and disagree under {self.nonan_fault_tolerance*100}% of the time.")
 
+
+
+
+  # Replace this with the actual import of your custom unpooling function
+  # from your_module import max_unpool2d_with_indices
+
+
+class TestMaxUnpool2D(unittest.TestCase):
+    
+    def setup_test(self, kernel_size, stride, padding, input_tensor, indices_tensor, expected_output, message, output_size=None):
+        from nan_ops import NormalUnpool2d
+
+        output = NormalUnpool2d(kernel_size, stride, padding, output_size)(input_tensor, indices_tensor)
+        print(output)
+        self.assertTrue(torch.allclose(output, expected_output), message)
+
+    def test_unpool_custom_outputshape(self):
+        from nan_ops import NaNPool2d
+        input_tensor = torch.tensor([
+            [
+                [[1, 2, 3], [4, 5, 3], [6, 7, 3]],  # Batch 0, Channel 0
+                [[3, 1, 2], [3, 3, 4], [5, 3, 3]]   # Batch 0, Channel 1
+            ],
+            [
+                [[31, 41, 51], [31, 61, 71], [31, 81, 91]],  # Batch 1, Channel 0
+                [[11, 21, 31], [41, 31, 51], [61, 61, 71]]   # Batch 1, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+
+        # Create the MaxUnpool2d layer
+        maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
+        expected_maxval, expected_idx = maxpool(input_tensor)
+        
+        unpool = torch.nn.MaxUnpool2d(kernel_size=2, stride=2)
+        expected_output = unpool(expected_maxval, expected_idx, output_size=input_tensor.shape)
+
+        # actual_maxval, actual_idx = NaNPool2d()(input_tensor, pool_size=(2,2), strides=(2,2))
+
+        # # Unpooling operation
+        # unpool_layer = NaNUnpool2d(kernel_size=2, stride=2, padding=0, output_size=input_tensor.shape)
+        # # unpooled_tensor = unpool_layer(expected_maxval, expected_idx)
+        # unpooled_tensor = unpool_layer(expected_maxval, idx) #, expected_idx)
+
+        self.setup_test(kernel_size=2, stride=2, padding=0, input_tensor=expected_maxval, indices_tensor=expected_idx, expected_output=expected_output, message="Basic unpooling failed.", output_size=input_tensor.shape)
+
+    
+    def test_unpool_basic(self):
+        input_tensor = torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32)
+        indices_tensor = torch.tensor([[[[0, 1], [2, 3]]]], dtype=torch.int64)
+        kernel_size = (2, 2)
+        stride = (2, 2)
+        padding = (0, 0)
+
+        expected_output = torch.tensor([[[[1, 2, 3, 4],
+                                          [0, 0, 0, 0],
+                                          [0, 0, 0, 0],
+                                          [0, 0, 0, 0]]]], dtype=torch.float32)
+
+        self.setup_test(kernel_size, stride, padding, input_tensor, indices_tensor, expected_output, "Basic unpooling failed.")
+
+    def test_unpool_with_padding(self):
+        input_tensor = torch.tensor([[[[0, 0, 0], [0, 4, 0], [0, 0, 0]]]], dtype=torch.float32)
+        indices_tensor = torch.tensor([[[[0, 1, 3], [4, 10, 7], [12, 13, 15]]]], dtype=torch.int64)
+        kernel_size = (2, 2)
+        stride = (2, 2)
+        padding = (1, 1)
+
+        expected_output = torch.tensor([[[[0, 0, 0, 0],
+                                          [0, 0, 0, 0],
+                                          [0, 0, 4, 0],
+                                          [0, 0, 0, 0]]]], dtype=torch.float32)
+
+        self.setup_test(kernel_size, stride, padding, input_tensor, indices_tensor, expected_output, "Unpooling with padding failed.")
+
+    def test_unpool_non_square_pooling(self):
+        input_tensor = torch.tensor([[[[5, 6], [7, 8]]]], dtype=torch.float32)
+        indices_tensor = torch.tensor([[[[0, 2], [4, 6]]]], dtype=torch.int64)
+        kernel_size = (2, 3)
+        stride = (2, 3)
+        padding = (0, 0)
+
+        expected_output = torch.tensor([[[[5, 0, 6, 0, 7, 0],
+                                          [8, 0, 0, 0, 0, 0],
+                                          [0, 0, 0, 0, 0, 0],
+                                          [0, 0, 0, 0, 0, 0]]]], dtype=torch.float32)
+
+        self.setup_test(kernel_size, stride, padding, input_tensor, indices_tensor, expected_output, "Unpooling with non-square pooling failed.")
+        
+
+    def test_unpool_multi_channel(self):
+        input_tensor = torch.tensor([[[[1, 2], [3, 4]], [[5, 6], [7, 8]]]], dtype=torch.float32)
+        indices_tensor = torch.tensor([[[[0, 1], [2, 3]], [[0, 2], [4, 6]]]], dtype=torch.int64)
+        kernel_size = (2, 2)
+        stride = (2, 2)
+        padding = (0, 0)
+
+        expected_output = torch.tensor([[[[1, 2, 3, 4],
+                                          [0, 0, 0, 0],
+                                          [0, 0, 0, 0],
+                                          [0, 0, 0, 0]],
+                                          [[5, 0, 6, 0],
+                                          [7, 0, 8, 0],
+                                          [0, 0, 0, 0],
+                                          [0, 0, 0, 0]]]], dtype=torch.float32)
+
+        self.setup_test(kernel_size, stride, padding, input_tensor, indices_tensor, expected_output, "Unpooling with multiple channels failed.")
+
+
+    def test_unpool_large_tensor(self):
+        input_tensor = torch.arange(1, 17, dtype=torch.float32).view(1, 1, 4, 4)
+        # Perform max pooling with kernel size 2x2 and stride 2x2
+        pooled_tensor, indices_tensor = max_pool2d(input_tensor, kernel_size=2, stride=2, return_indices=True)
+
+        kernel_size = (2, 2)
+        stride = (2, 2)
+        padding = (0, 0)
+
+        # Create the expected output
+        expected_output = torch.tensor([[[[ 0,  0,  0,  0],
+                                          [ 0,  6,  0,  8],
+                                          [ 0,  0,  0,  0],
+                                          [ 0,  14,  0,  16]]]], dtype=torch.float32)
+
+        self.setup_test(kernel_size, stride, padding, pooled_tensor, indices_tensor, expected_output, "Unpooling with larger tensor failed.")
+
+
+class TestNaNUnpool2D(unittest.TestCase):
+
+    def setup_test_nan(self, kernel_size, stride, padding, input_tensor, expected_output, message):
+        from nan_ops import NaNUnpool2d 
+        from nan_ops import NaNPool2d_v2 as NaNPool2d
+
+        # Create Torch NaN output 
+        actual_maxval, actual_idx = NaNPool2d()(input_tensor, pool_size=kernel_size, strides=stride, padding=padding)
+        unpool_layer = NaNUnpool2d(kernel_size=kernel_size, stride=stride, padding=padding, output_size=input_tensor.shape)
+        actual_output = unpool_layer(actual_maxval, actual_idx) 
+
+        print(actual_output.shape, expected_output.shape)
+        print(actual_output, expected_output)
+        print(actual_output == expected_output)
+
+        self.assertTrue(torch.allclose(torch.nan_to_num(actual_output, nan=3.14), torch.nan_to_num(expected_output, nan=3.14)), message)
+
+    def setup_test_nonan(self, kernel_size, stride, padding, input_tensor, message):
+        from nan_ops import NaNUnpool2d
+        from nan_ops import NaNPool2d_v2 as NaNPool2d
+
+
+        # Create Torch default output 
+        maxpool = torch.nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=padding, return_indices=True)
+        expected_maxval, expected_idx = maxpool(input_tensor)
+        unpool = torch.nn.MaxUnpool2d(kernel_size=kernel_size, stride=stride, padding=padding)
+        expected_output = unpool(expected_maxval, expected_idx, output_size=input_tensor.shape)
+        
+        # Create Torch NaN output 
+        actual_maxval, actual_idx = NaNPool2d()(input_tensor, pool_size=kernel_size, strides=stride, padding=padding)
+        unpool_layer = NaNUnpool2d(kernel_size=kernel_size, stride=stride, padding=padding, output_size=input_tensor.shape)
+        actual_output = unpool_layer(actual_maxval, actual_idx) 
+
+        # print(actual_output == expected_output)
+
+        self.assertTrue(torch.allclose(actual_output, expected_output), message)
+
+    def test_unpool_basic_stride1_nan(self):
+
+        input_tensor = torch.tensor([
+            [
+                [[1, 2, 3], [4, 5, 3], [6, 7, 3]],  # Batch 0, Channel 0
+                [[3, 1, 2], [3, 3, 4], [5, 3, 3]]   # Batch 0, Channel 1
+            ],
+            [
+                [[31, 41, 51], [31, 61, 71], [31, 81, 91]],  # Batch 1, Channel 0
+                [[11, 21, 31], [41, 31, 51], [61, 61, 71]]   # Batch 1, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+        expected_output = torch.tensor([[[[ 0.,  0.,  0.],
+                                          [ 0.,  5.,  0.],
+                                          [ 0.,  7.,  0.]],
+                                          
+                                          [[float('nan'),  0.,  0.],
+                                           [float('nan'), float('nan'),  4.],
+                                           [ 5.,  0.,  0.]]],
+                                           
+                                           [[[ 0.,  0.,  0.],
+                                             [ 0., 61., 71.],
+                                             [ 0., 81., 91.]],
+                                             
+                                             [[ 0.,  0.,  0.],
+                                              [41.,  0., 51.],
+                                              [float('nan'), float('nan'), 71.]]]])
+        
+        self.setup_test_nan(kernel_size=2, stride=1, padding=0, input_tensor=input_tensor, expected_output=expected_output, message="Basic unpooling with duplicate max values failed.")
+
+    def test_unpool_batch1_nan(self):
+
+        input_tensor = torch.tensor([[
+            [[6, 6, 3, 4], [5, 6, 7, 8], [9, 10, 11, 16], [13, 14, 15, 16]]
+        ]], dtype=torch.float32)
+
+
+        expected_output = torch.tensor([[[[float('nan'), float('nan'),  0.,  0.],
+          [ 0., float('nan'),  0.,  8.],
+          [ 0.,  0.,  0., float('nan')],
+          [ 0., 14.,  0., float('nan')]]]])
+        
+        self.setup_test_nan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, expected_output=expected_output, message="Single batch unpooling with duplicate max values failed.")
+
+    def test_unpool_multichannel_nan(self):
+        # Input tensor of size (1, 3, 4, 4) with 3 channels
+        input_tensor = torch.tensor([[
+            [[1, 2, 3, 4], [8, 8, 8, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
+            [[17, 18, 19, 20], [21, 38, 38, 38], [25, 26, 27, 28], [29, 30, 31, 32]],
+            [[33, 34, 35, 36], [37, 38, 39, 40], [41, 42, 43, 44], [45, 46, 47, 48]]
+        ]], dtype=torch.float32)
+
+        expected_output = torch.tensor([[[[ 0.,  0.,  0.,  0.],
+          [float('nan'), float('nan'), float('nan'), float('nan')],
+          [ 0.,  0.,  0.,  0.],
+          [ 0., 14.,  0., 16.]],
+
+         [[ 0.,  0.,  0.,  0.],
+          [ 0., 38., float('nan'), float('nan')],
+          [ 0.,  0.,  0.,  0.],
+          [ 0., 30.,  0., 32.]],
+
+         [[ 0.,  0.,  0.,  0.],
+          [ 0., 38.,  0., 40.],
+          [ 0.,  0.,  0.,  0.],
+          [ 0., 46.,  0., 48.]]]])
+
+        self.setup_test_nan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, expected_output=expected_output, message="Multichannel unpooling with duplicate max values failed.")
+
+    def test_unpool_largekernel_nan(self):
+        # Input tensor of size (1, 3, 4, 4) with 3 channels
+        input_tensor = torch.tensor([[
+            [[40, 40, 40, 40, 40, 40], [7, 8, 9, 10, 11, 12], [13, 14, 15, 16, 17, 18], 
+            [19, 20, 21, 22, 23, 24], [40, 40, 40, 50, 40, 50], [31, 32, 33, 34, 35, 36]]
+        ]], dtype=torch.float32)
+
+        expected_output = torch.tensor([[[[float('nan'), float('nan'), float('nan'), float('nan'), float('nan'), float('nan')],
+          [ 0.,  0.,  0.,  0.,  0.,  0.],
+          [ 0.,  0.,  0.,  0.,  0.,  0.],
+          [ 0.,  0., 21., 22., 23., 24.],
+          [float('nan'), float('nan'), float('nan'), float('nan'),  0., float('nan')],
+          [ 0.,  0.,  0.,  0.,  0.,  0.]]]])
+
+        self.setup_test_nan(kernel_size=3, stride=1, padding=0, input_tensor=input_tensor, expected_output=expected_output, message="Large kernel unpooling with duplicate max values failed.")
+
+    def test_unpool_nonsquarekernel_nan(self):
+        # Input tensor of size (1, 3, 4, 4) with 3 channels
+        input_tensor = torch.tensor([[
+            [[1, 2, 3, 4, 5, 6], [8, 8, 9, 10, 12, 12], [14, 14, 16, 16, 17, 18]]
+        ]], dtype=torch.float32)
+
+        expected_output = torch.tensor([[[[ 0.,  0.,  0.,  0.,  0.,  0.],
+          [float('nan'), float('nan'),  0., 10., float('nan'), float('nan')],
+          [ 0.,  0.,  0.,  0.,  0.,  0.]]]])
+
+        self.setup_test_nan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, expected_output=expected_output, message="Single batch large kernel unpooling with duplicate max values failed.")
+    
+    def test_unpool_basic_stride1_nonan(self):
+        input_tensor = torch.tensor([
+            [
+                [[1, 2, 3], [4, 5, 3], [6, 7, 3]],  # Batch 0, Channel 0
+                [[3, 0, 1], [3, 2, 4], [5, 8, 9]]   # Batch 0, Channel 1
+            ],
+            [
+                [[31, 41, 51], [31, 61, 71], [31, 81, 91]],  # Batch 1, Channel 0
+                [[11, 21, 32], [41, 32, 51], [61, 32, 71]]   # Batch 1, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+        self.setup_test_nonan(kernel_size=2, stride=1, padding=0, input_tensor=input_tensor, message="Basic unpooling without any duplicate max values failed.")
+
+    def test_unpool_basic_stride2_nonan(self):
+        input_tensor = torch.tensor([
+            [
+                [[1, 2, 3], [4, 5, 3], [6, 7, 3]],  # Batch 0, Channel 0
+                [[3, 1, 2], [3, 3, 4], [5, 3, 3]]   # Batch 0, Channel 1
+            ],
+            [
+                [[31, 41, 51], [31, 61, 71], [31, 81, 91]],  # Batch 1, Channel 0
+                [[11, 21, 31], [41, 31, 51], [61, 31, 71]]   # Batch 1, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+        self.setup_test_nonan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, message="Basic unpooling without any duplicate max values failed.")
+
+    def test_unpool_batch1_nonan(self):
+        # Input tensor of size (1, 1, 4, 4)
+        input_tensor = torch.tensor([[
+            [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
+        ]], dtype=torch.float32)
+
+        self.setup_test_nonan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, message="Single batch unpooling without any duplicate max values failed.")
+
+    def test_unpool_multichannels_nonan(self):
+        # Input tensor of size (1, 3, 4, 4) with 3 channels
+        input_tensor = torch.tensor([[
+            [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
+            [[17, 18, 19, 20], [21, 22, 23, 24], [25, 26, 27, 28], [29, 30, 31, 32]],
+            [[33, 34, 35, 36], [37, 38, 39, 40], [41, 42, 43, 44], [45, 46, 47, 48]]
+        ]], dtype=torch.float32)
+
+        self.setup_test_nonan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, message="Multi channel unpooling without any duplicate max values failed.")
+
+    def test_unpool_largekernel_nonan(self):
+        # Input tensor of size (1, 1, 6, 6)
+        input_tensor = torch.tensor([[
+            [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12], [13, 14, 15, 16, 17, 18], 
+            [19, 20, 21, 22, 23, 24], [25, 26, 27, 28, 29, 30], [31, 32, 33, 34, 35, 36]]
+        ]], dtype=torch.float32)
+
+        self.setup_test_nonan(kernel_size=3, stride=1, padding=0, input_tensor=input_tensor, message="Large kernel unpooling without any duplicate max values failed.")
+
+    def test_unpool_nonsquarekernel_nonan(self):
+        # Input tensor of size (1, 1, 3, 6)
+        input_tensor = torch.tensor([[
+            [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12], [13, 14, 15, 16, 17, 18]]
+        ]], dtype=torch.float32)
+
+        self.setup_test_nonan(kernel_size=2, stride=2, padding=0, input_tensor=input_tensor, message="Single batch large kernel unpooling without any duplicate max values failed.")
+
+    
+
+class TestNaNPool2D_v2(unittest.TestCase):
+
+    def compare(self, expected_maxval, expected_idx, nan_maxval, nan_idx, maxval_msg, idx_msg):
+        #Reshape nan_idx for comparison purposes
+        tmp_idx = []
+        for i in list(nan_idx.values()):
+            tmp = []
+            if len(i) != 1: #modified indices
+                for b in range(len(i)):
+                    if i[b].shape: #indices for multiple max values
+                        tmp.append(i[b][0])
+                    else: 
+                        tmp.append(i[b])
+            else:
+                tmp = [i[0][0], i[0][1]]
+
+            tmp_idx.append(tmp)
+
+        self.assertTrue(torch.allclose(expected_maxval, nan_maxval), maxval_msg)
+        self.assertTrue(torch.allclose(expected_idx.squeeze(), torch.tensor(tmp_idx).T), idx_msg)
+
+
+    def test_basic(self):
+        from nan_ops import NaNPool2d_v2
+        input_tensor = torch.tensor([
+            [
+                [[1, 2, 3], [4, 5, 3], [6, 7, 3]],  # Batch 0, Channel 0
+                [[3, 1, 2], [3, 3, 4], [5, 3, 3]]   # Batch 0, Channel 1
+            ],
+            [
+                [[31, 41, 51], [31, 61, 71], [31, 81, 91]],  # Batch 1, Channel 0
+                [[11, 21, 31], [41, 31, 51], [61, 31, 71]]   # Batch 1, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+
+        nan_maxval, nan_idx = NaNPool2d_v2()(input_tensor, pool_size=(2,2), strides=(2,2))
+        expected_maxval, expected_idx = torch.nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)(input_tensor)
+        self.compare(expected_maxval, expected_idx, nan_maxval, nan_idx, "Max values do not match for the basic tensor NaN pooling test", "Indices do not match for the basic tensor NaN pooling test")
+
+
+    def test_big_tensor(self):
+        from nan_ops import NaNPool2d_v2
+        input_tensor = torch.tensor([
+            [
+                [[1, 2, 3], [3, 3, 3], [6, 7, 8]],  # Batch 0, Channel 0
+                [[4, 5, 5], [5, 5, 6], [8, 8, 8]],  # Batch 0, Channel 1
+                [[2, 1, 2], [3, 4, 2], [6, 6, 2]]   # Batch 0, Channel 2
+            ],
+            [
+                [[21, 22, 22], [21, 23, 23], [24, 25, 25]],  # Batch 1, Channel 0
+                [[11, 12, 12], [11, 13, 14], [14, 15, 15]],  # Batch 1, Channel 1
+                [[5, 5, 5], [6, 5, 6], [6, 7, 7]]           # Batch 1, Channel 2
+            ]
+        ], dtype=torch.float32)
+
+
+        nan_maxval, nan_idx = NaNPool2d_v2()(input_tensor, pool_size=(2,2), strides=(2,2))
+        expected_maxval, expected_idx = torch.nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)(input_tensor)
+        self.compare(expected_maxval, expected_idx, nan_maxval, nan_idx, "Max values do not match for the big tensor NaN pooling test", "Indices do not match for the big tensor NaN pooling test")
+
+
+    def test_identicalmaxvals(self):
+        from nan_ops import NaNPool2d_v2
+        input_tensor = torch.tensor([
+            [
+                [[10, 10, 12], [10, 10, 15], [11, 10, 15]],  # Batch 0, Channel 0
+                [[7, 7, 7], [7, 6, 6], [8, 8, 8]]           # Batch 0, Channel 1
+            ],
+            [
+                [[3, 3, 2], [3, 3, 2], [2, 3, 3]],          # Batch 1, Channel 0
+                [[5, 5, 5], [5, 5, 5], [6, 5, 6]]           # Batch 1, Channel 1
+            ],
+            [
+                [[30, 30, 30], [30, 40, 40], [40, 40, 30]], # Batch 2, Channel 0
+                [[9, 9, 8], [8, 9, 9], [9, 9, 9]]           # Batch 2, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+
+        nan_maxval, nan_idx = NaNPool2d_v2()(input_tensor, pool_size=(2,2), strides=(2,2))
+        expected_maxval, expected_idx = torch.nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)(input_tensor)
+        self.compare(expected_maxval, expected_idx, nan_maxval, nan_idx, "Max values do not match for the identical max values tensor NaN pooling test", "Indices do not match for the identical max values tensor NaN pooling test")
+
+
+    def test_poolsize(self):
+        from nan_ops import NaNPool2d_v2
+        input_tensor = torch.tensor([
+            [
+                [[2, 5, 5], [5, 5, 3], [3, 2, 2]],  # Batch 0, Channel 0
+                [[9, 9, 9], [8, 9, 9], [9, 8, 9]]   # Batch 0, Channel 1
+            ],
+            [
+                [[12, 12, 12], [11, 12, 12], [10, 12, 11]],  # Batch 1, Channel 0
+                [[4, 5, 5], [6, 5, 5], [5, 4, 5]]           # Batch 1, Channel 1
+            ]
+        ], dtype=torch.float32)
+
+
+        nan_maxval, nan_idx = NaNPool2d_v2()(input_tensor, pool_size=(3,3), strides=(2,2))
+        expected_maxval, expected_idx = torch.nn.MaxPool2d(kernel_size=3, stride=2, return_indices=True)(input_tensor)
+        self.compare(expected_maxval, expected_idx, nan_maxval, nan_idx, "Max values do not match for the pool size tensor NaN pooling test", "Indices do not match for the pool size tensor NaN pooling test")
         
 
   
@@ -980,7 +1410,7 @@ if __name__ == "__main__":
     # suite = unittest.TestLoader().loadTestsFromTestCase(TestNaNPool2d)
     # unittest.TextTestRunner().run(suite)
 
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestNaNConv2d)
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestNaNUnpool2D)
     unittest.TextTestRunner().run(suite)
 
     #prep = PrepNaNConv2d(save_dir='/nanconv_unittests')

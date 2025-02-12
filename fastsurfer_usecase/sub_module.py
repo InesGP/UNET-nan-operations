@@ -24,8 +24,13 @@ import numpy as np
 import torch.nn.init as init
 import time
 # import torch._dynamo as dynamo
-from nan_ops import NaNConv2d, NaNPool2d, count_skip_conv2d
-# from skipconv import count_skip_conv2d
+
+#for nan pooling
+# from nan_ops import NaNConv2d, NaNPool2d, count_skip_conv2d
+#for nan unpooling
+from nan_ops import NaNConv2d, NaNUnpool2d, count_skip_conv2d
+from nan_ops import NaNPool2d_v2 as NaNPool2d
+
 
 # Building Blocks
 class InputDenseBlock(nn.Module):

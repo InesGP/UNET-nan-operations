@@ -225,7 +225,6 @@ class Inference:
                 pred = map_prediction_sagittal2full(
                     pred, num_classes=self.get_num_classes(), lut=self.lut
                 )
-                print('here')
 
             # permute the prediction into the out slice order
             pred = pred.permute(*self.permute_order[plane]).to(

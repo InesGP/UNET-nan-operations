@@ -445,7 +445,6 @@ class NoArgMaxIndices(BaseException):
             "no argmax indices: batch_argmax requires non-batch shape to be non-empty")
 
 
-
 class NaNPool2d:
 
     def __init__(self, max_threshold: int = 1, probabilistic: bool = False, rtol_epsilon: float = 1e-7, nan_probability: Optional[float] = 0.8):
@@ -531,7 +530,7 @@ class NaNPool2d:
     def check_for_nans(self, c, i, j, window, maxval, max_index):
 
         # Handle NaNs across the batch in a vectorized way
-        nan_mask = torch.isnan(maxval)  # Find NaNs in maxval
+        nan_mask = torch.isnan(window)  # Find NaNs in maxval
         window = window.masked_fill(torch.isnan(window), float("-inf"))  # Replace NaNs in window with -inf
         maxval = torch.max(window.reshape(self.batch_size, -1), dim=1)[0]  # Recompute max after replacing NaNs
 
@@ -539,8 +538,14 @@ class NaNPool2d:
         # We check if maxval was recomputed when NaNs are removed
         valid_indices = (window == maxval[:, None, None]) & (~nan_mask[:, None, None])  # Filter valid max indices
         if valid_indices.any():
-            max_index = torch.max(window.masked_fill(nan_mask[:, None, None], float('-inf')).reshape(self.batch_size, -1), dim=1)[1]
-            max_index = torch.stack((max_index // self.pool_height, max_index % self.pool_width), dim=1)
+            # max_index = torch.max(window.masked_fill(nan_mask[:, None, None], float('-inf')).reshape(self.batch_size, -1), dim=1)[1]
+            max_index = torch.argmax(window.reshape(self.batch_size, -1), dim=1)
+            max_index = torch.stack((max_index // self.pool_width, max_index % self.pool_width), dim=1)
+
+            # # Ensure indices are within bounds by clamping
+            # max_index[:, 0] = torch.clamp(max_index[:, 0], 0, self.pool_height - 1)
+            # max_index[:, 1] = torch.clamp(max_index[:, 1], 0, self.pool_width - 1)
+
 
         # Check for multiple max values in a vectorized way
         check_multi_max = torch.sum(torch.isclose(window, maxval[:, None, None], rtol=self.rtol_epsilon, equal_nan=True), axis=(1, 2))
@@ -753,6 +758,389 @@ class NormalPool2d:
 
         return torch.Tensor(output_array), torch.Tensor(index_array).type(torch.int64)
 
+
+class NaNPool2d_v2:
+
+    def __init__(self, max_threshold: int = 1, rtol_epsilon: float = 1e-7,):
+        """
+        Initializes the NaNPool2d object.
+
+        Args:
+            max_threshold (float, optional): Max threshold value for determining multiple max value occurrence ratio. Defaults to 0.5.
+        """
+        torch.manual_seed(0)
+        self.max_threshold = max_threshold
+        self.rtol_epsilon = rtol_epsilon
+
+
+    def check_for_nans(self, c, i, j, window, maxval, max_index):
+
+        # print(window)
+        # Handle NaNs across the batch in a vectorized way
+        nan_mask = torch.isnan(window)  # Find NaNs in maxval
+        window = window.masked_fill(torch.isnan(window), float("-inf"))  # Replace NaNs in window with -inf
+        maxval = torch.max(window.reshape(self.batch_size, -1), dim=1)[0]  # Recompute max after replacing NaNs
+
+        # Update max_index in a vectorized way
+        # We check if maxval was recomputed when NaNs are removed
+        valid_indices = (window == maxval[:, None, None]) & (~nan_mask[:, None, None])  # Filter valid max indices
+        if valid_indices.any():
+            # max_index = torch.max(window.masked_fill(nan_mask[:, None, None], float('-inf')).reshape(self.batch_size, -1), dim=1)[1]
+            max_index = torch.argmax(window.reshape(self.batch_size, -1), dim=1)
+            max_index = torch.stack((max_index // self.pool_width, max_index % self.pool_width), dim=1)
+
+            
+
+        # Check for multiple max values in a vectorized way
+        check_multi_max = torch.sum(torch.isclose(window, maxval[:, None, None], rtol=self.rtol_epsilon, equal_nan=True), axis=(1, 2))
+
+        # Apply the max threshold to the entire batch
+        exceed_threshold = check_multi_max > self.max_threshold
+        # print('Max index shape and original index', max_index.shape, max_index)
+        # print('original maxval', maxval)
+        if exceed_threshold.any():
+            
+            # print('exceeded')
+            # max_index = torch.zeros((self.batch_size, 2), dtype=torch.long)  # Default to index [0,0] for NaNs
+
+            # Get the indices where the value equals the maximum value
+            # We directly compare the window to the max values
+            # matching_indices = (window == maxval.view(-1, 1, 1))  # Broadcasting maxval across the window
+            matching_indices = torch.isclose(window, maxval.view(-1, 1, 1), rtol=self.rtol_epsilon, equal_nan=True )  # Broadcasting maxval across the window
+
+            # Convert the boolean mask to indices
+            indices = matching_indices.nonzero(as_tuple=False)
+
+            # Group the indices by batch
+            max_index = [indices[indices[:, 0] == batch, 1:] for batch in indices[:, 0].unique()]
+
+        # else:
+        #     print('here')
+        #     max_index = max_index.unsqueeze(0)
+            
+        # print('new shape', max_index.shape)
+        # print('maxval and new index', maxval, max_index)
+       
+        max_index_1d = []
+        # print(type(max_index), max_index[:, 0])
+        # Compute 1D indices for output
+        if type(max_index) == list:
+            # print(max_index)
+            for batch_idx in max_index:
+                tmp = (i * self.stride_height + batch_idx[:, 0]) * self.input_width + (j * self.stride_width + batch_idx[:, 1])
+                if len(tmp) > 1:
+                    max_index_1d.append( tmp )
+                else:
+                    max_index_1d.append( tmp[0] )
+                
+            # print(max_index_1d)
+        else:
+            max_index_1d.append( (i * self.stride_height + max_index[:, 0]) * self.input_width + (j * self.stride_width + max_index[:, 1]) )
+
+        # print('max_index_1d', max_index_1d)
+
+        # Assign the values and indices
+        self.output_array[:, c, i, j] = maxval
+        # print(max_index_1d)
+        # self.index_array[:, c, i, j, :, :] = torch.stack(max_index_1d)
+        self.index_array[(c, i, j)] = max_index_1d
+
+
+
+    def __call__(self, input_array: torch.Tensor, pool_size, strides = None, padding=None) -> Tuple:
+        """
+        Perform NaN-aware max pooling on the input array.
+
+        Args:
+            input_array (torch.Tensor): Input tensor of shape (batch_size, channels, input_height, input_width).
+            pool_size (int or tuple): Size of the pooling window (pool_height, pool_width).
+            strides (int or tuple, optional): Strides for pooling (stride_height, stride_width). Defaults to None.
+
+        Returns:
+            tuple: A tuple containing output array and index array after pooling.
+        """
+
+        batch_size, channels, input_height, input_width = input_array.shape
+        # Force values to int
+        self.batch_size = int(batch_size)
+        channels = int(channels)
+        self.input_height = int(input_height)
+        self.input_width = int(input_width)
+
+        self.pool_size = pool_size if isinstance(pool_size, tuple) else (pool_size, pool_size)
+        self.strides = strides if isinstance(strides, tuple) else (strides, strides)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding) #IMPLEMENT PROPERLY
+
+        # pool_height, pool_width = self.pool_size
+        # Force values to int
+        self.pool_height = int(self.pool_size[0])
+        self.pool_width = int(self.pool_size[1])
+
+        if self.strides:
+            stride_height, stride_width = self.strides
+
+        else:
+            stride_height, stride_width = self.pool_size
+
+        # Force values to int
+        self.stride_height = int(stride_height)
+        self.stride_width = int(stride_width)
+
+        # Calculate simplified intensity distribution of the layer
+        self.min_intensity = torch.min(input_array)
+        self.max_intensity = torch.max(input_array)
+
+        # Calculate the output dimensions
+        output_height = int((input_height - self.pool_height) // stride_height + 1)
+        output_width = int((input_width - self.pool_width) // stride_width + 1)
+
+        # Initialize output arrays for pooled values and indices
+        self.output_array = torch.zeros((self.batch_size, channels, output_height, output_width))
+        # self.index_array = torch.zeros((self.batch_size, channels, output_height, output_width), dtype=torch.object)
+        self.index_array = torch.zeros((self.batch_size, channels, output_height, output_width, self.pool_height, self.pool_width),)
+        self.index_array = {}
+
+
+        # Perform max pooling with list comprehensions
+        for c in range(channels):
+
+            # Create a list of tuples with pooled values and indices
+            values_and_indices = [
+                self.check_for_nans(c, i, j, window, torch.max(window.reshape(self.batch_size, -1), dim=1)[0], torch.max(window.reshape(self.batch_size, -1), dim=1)[1])
+                for i in range(output_height)
+                for j in range(output_width)
+                for window in [
+                    input_array[
+                        :,
+                        c,
+                        i * stride_height : i * stride_height + self.pool_height,
+                        j * stride_width : j * stride_width + self.pool_width,
+                    ]
+                ]
+            ]
+
+        return torch.Tensor(self.output_array), self.index_array #torch.Tensor(self.index_array).type(torch.int64)
+
+
+class NaNUnpool2d:
+    def __init__(self, kernel_size, stride, padding, output_size=None):
+        """
+        Initializes NaN unpooling for a 4D tensor using 1D flattened indices.
+
+        Args:
+            kernel_size (int or tuple): The kernel size used in pooling.
+            stride (int or tuple): The stride used in pooling.
+            padding (int or tuple): The padding used in pooling.
+            output_size (tuple, optional): The output size (H_out, W_out). If None, it will be calculated.
+        """
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size)
+        self.stride = stride if isinstance(stride, tuple) else (stride, stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding)
+        self.output_size = output_size  # Optional argument for output size
+
+    def _convert_1d_to_2d(self, flat_idx, width, stride_height, stride_width, padding, output_height, output_width):
+        """
+        Converts a 1D index to 2D coordinates, ensuring the positions are within bounds.
+
+        Args:
+            flat_idx (int): The 1D index to convert.
+            width (int): The width of the input tensor.
+            stride_height (int): The stride in height.
+            stride_width (int): The stride in width.
+            padding (int): The padding.
+            output_height (int): The height of the output tensor.
+            output_width (int): The width of the output tensor.
+
+        Returns:
+            tuple: The (row, col) 2D coordinates.
+        """
+        out_row = (flat_idx // width) * stride_height - padding
+        out_col = (flat_idx % width) * stride_width - padding
+
+        if 0 <= out_row < output_height and 0 <= out_col < output_width:
+            return out_row, out_col
+        return None, None  # Invalid position
+
+    def __call__(self, input_tensor, indices, ):
+        """
+        Implements NaN unpooling for a 4D tensor using 1D flattened indices.
+
+        Args:
+            input_tensor (torch.Tensor): The input tensor of shape (B, C, H, W) (from max pooling).
+            indices (torch.Tensor): The indices of max pooling of shape (B, C, H, W).
+
+        Returns:
+            torch.Tensor: The unpooled tensor of shape (B, C, H_out, W_out).
+        """
+        # Extract input dimensions
+        batch_size, channels, height, width = input_tensor.size()
+
+        # Calculate output dimensions if output_size is not provided
+        if self.output_size is None:
+            output_height = (height - 1) * self.stride[0] - 2 * self.padding[0] + self.kernel_size[0]
+            output_width = (width - 1) * self.stride[1] - 2 * self.padding[1] + self.kernel_size[1]
+            self.output_size = (batch_size, channels, output_height, output_width)
+       
+        # Initialize the unpooled tensor with zeros
+        output = torch.zeros(self.output_size, dtype=input_tensor.dtype, device=input_tensor.device)
+        insert_nan = False
+
+        # Use PyTorch's scatter_add to assign values based on the indices
+        for b in range(batch_size):
+            for c in range(channels):
+            # for c, i in zip(np.arange(channels), indices.keys()):
+
+                # modified indices for nan unpooling are in the form of a dictionary
+                if type(indices) == dict:
+
+                    try: 
+                        #attempt to process normal indices that do not have multiple max values 
+                        flat_indices = torch.stack([item[0] for key, item in indices.items() if key[:len((c,))] == (c,)])[:, b] #.view(-1)
+                        flat_input =  input_tensor[b, c].view(-1)
+                    except:
+                        # we go here when a ragged array is detected above aka presence of multiple max values
+                        # print( list({key: value for key, value in indices.items() if key[:len((c,))] == (c,)}.values()) )
+
+                        # sort through the multiple max values indices vs the normal max values indices to extract the appropriate 
+                        # indices for the present coordinates
+                        tmp_indices = []
+                        for key,value in indices.items():
+                            if key[:len((c,))] == (c,):
+                                total_elements = sum(t.numel() for t in value)
+
+                                if total_elements > batch_size:
+                                    tmp_indices.append(value[b])
+                                else: 
+                                    tmp_indices.append(value[0][b])
+
+                        flat_indices = [tmp_indices[i:i + batch_size] for i in range(0, len(tmp_indices), batch_size)]
+
+                        # Calculate padding size
+                        total_elements = input_tensor[b, c].numel()  # Total elements = 81
+                        remainder = total_elements % batch_size
+                        if remainder != 0: # total elements is an odd number which may be a problem if batch size is even or vice versa
+                            padding_size = batch_size - remainder
+                            flat_input = F.pad(input_tensor[b, c].view(-1), (0, padding_size), value=float('inf')).view(-1, batch_size)
+                        else: #assume window is even numbered
+                            flat_input =  input_tensor[b, c].view(-1, batch_size)
+
+                        # Turn flag on to ensure NaNs are inserted later
+                        insert_nan = True
+                        # second_dim = flat_input.shape[1]
+                   
+                    # print('final',  flat_indices )
+
+                else: # if its normal type of indices array
+                    flat_indices = indices[b, c].view(-1)
+                    flat_input =  input_tensor[b, c].view(-1)
+
+                flat_output = output[b, c].view(-1)
+                # flat_indices = indices[b, c].view(-1)
+                # flat_input = input_tensor[b, c].view(-1)
+
+
+                # print(flat_indices, flat_input)
+
+                if insert_nan:
+                    # for idx_batch, inp in zip(flat_indices, flat_input[:, :second_dim]):
+                    for idx_batch, inp in zip(flat_indices, flat_input):
+                        inp = inp[~torch.isinf(inp)] # stripping away inf potentially added in earlier for padding
+                        for flat_idx, flat_inp in zip(idx_batch, inp):
+                            # print(flat_idx, flat_idx.shape )
+                            if flat_idx.shape:
+                                # print(flat_idx, 'nan')
+                                flat_output.scatter_(0, flat_idx, float('nan'))
+                            else:
+                                # print(flat_idx, flat_inp)
+                                flat_output.scatter_(0, flat_idx, flat_inp)
+
+                    # Reset flag to prevent unwanted NaN insertion
+                    insert_nan = False
+
+                else:     
+                    # Normal unpooling
+                    flat_output.scatter_(0, flat_indices, flat_input)
+
+        return output
+
+
+class NormalUnpool2d:
+    def __init__(self, kernel_size, stride, padding, output_size=None):
+        """
+        Initializes NaN unpooling for a 4D tensor using 1D flattened indices.
+
+        Args:
+            kernel_size (int or tuple): The kernel size used in pooling.
+            stride (int or tuple): The stride used in pooling.
+            padding (int or tuple): The padding used in pooling.
+            output_size (tuple, optional): The output size (H_out, W_out). If None, it will be calculated.
+        """
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size)
+        self.stride = stride if isinstance(stride, tuple) else (stride, stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding)
+        self.output_size = output_size  # Optional argument for output size
+
+    def _convert_1d_to_2d(self, flat_idx, width, stride_height, stride_width, padding, output_height, output_width):
+        """
+        Converts a 1D index to 2D coordinates, ensuring the positions are within bounds.
+
+        Args:
+            flat_idx (int): The 1D index to convert.
+            width (int): The width of the input tensor.
+            stride_height (int): The stride in height.
+            stride_width (int): The stride in width.
+            padding (int): The padding.
+            output_height (int): The height of the output tensor.
+            output_width (int): The width of the output tensor.
+
+        Returns:
+            tuple: The (row, col) 2D coordinates.
+        """
+        out_row = (flat_idx // width) * stride_height - padding
+        out_col = (flat_idx % width) * stride_width - padding
+
+        if 0 <= out_row < output_height and 0 <= out_col < output_width:
+            return out_row, out_col
+        return None, None  # Invalid position
+
+    def __call__(self, input_tensor, indices):
+        """
+        Implements NaN unpooling for a 4D tensor using 1D flattened indices.
+
+        Args:
+            input_tensor (torch.Tensor): The input tensor of shape (B, C, H, W) (from max pooling).
+            indices (torch.Tensor): The indices of max pooling of shape (B, C, H, W).
+
+        Returns:
+            torch.Tensor: The unpooled tensor of shape (B, C, H_out, W_out).
+        """
+        # Extract input dimensions
+        batch_size, channels, height, width = input_tensor.size()
+
+        # Calculate output dimensions if output_size is not provided
+        if self.output_size is None:
+            output_height = (height - 1) * self.stride[0] - 2 * self.padding[0] + self.kernel_size[0]
+            output_width = (width - 1) * self.stride[1] - 2 * self.padding[1] + self.kernel_size[1]
+            self.output_size = (batch_size, channels, output_height, output_width)
+        # else:
+        #     output_size = (*self.output_size)  # Use the provided output size
+
+        # Initialize the unpooled tensor with zeros
+        output = torch.zeros(self.output_size, dtype=input_tensor.dtype, device=input_tensor.device)
+        # print('output', output.shape)
+
+        # Use PyTorch's scatter_add to assign values based on the indices
+        for b in range(batch_size):
+            for c in range(channels):
+                flat_output = output[b, c].view(-1)
+                flat_indices = indices[b, c].view(-1)
+                flat_input = input_tensor[b, c].view(-1)
+
+                print(flat_indices, flat_input)
+
+                flat_output.scatter_(0, flat_indices, flat_input)
+
+        return output
 
 
 # Conv2d Skipped Operation Counter -- not to be implemented in CPP
