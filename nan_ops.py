@@ -564,8 +564,16 @@ class NaNPool2d:
                 max_index = torch.zeros((self.batch_size, 2), dtype=torch.long)  # Default to index [0,0] for NaNs
 
 
+        # if entire window is NaN and maxval=NaN then max_index is 1D instead of 2D
+        if torch.isnan(maxval).all() or torch.isinf(maxval).all():
+          max_index = torch.zeros((self.batch_size, 2), dtype=torch.long)  # Default to index [0,0] for NaNs
+
+
         # Compute 1D indices for output
-        max_index_1d = (i * self.stride_height + max_index[:, 0]) * self.input_width + (j * self.stride_width + max_index[:, 1])
+        try:
+            max_index_1d = (i * self.stride_height + max_index[:, 0]) * self.input_width + (j * self.stride_width + max_index[:, 1])
+        except:
+          print(maxval, maxval.shape, max_index, max_index.shape, i,j )
 
         # Assign the values and indices
         self.output_array[:, c, i, j] = maxval
