@@ -9,13 +9,17 @@ from torch.optim.lr_scheduler import StepLR
 from torchvision.models.feature_extraction import create_feature_extractor
 import os
 import pickle
-from nan_ops import NaNLinear, NaNPool2d, count_skip_conv2d, NaNConv2d
+# from nan_ops import NaNLinear, NaNPool2d, count_skip_conv2d, NaNConv2d
+from nan_ops import NaNPool2d, count_skip_conv2d, NaNConv2d
 from sklearn.model_selection import KFold
 import numpy as np
 from torch.utils.data import Subset
 
 print( os.environ['THRESHOLD'] )
-THRESH = float(os.environ['THRESHOLD'])
+try:
+    THRESH = float(os.environ['THRESHOLD'])
+except:
+    THRESH = os.environ['THRESHOLD']
 EPSILON = float(os.environ['EPSILON'])
 POOL_THRESH = float(os.environ['POOL_THRESH'])
 
@@ -67,46 +71,81 @@ class ConvOnlyNet(nn.Module):
         self.conv4 = nn.Conv2d(128, 10, kernel_size=3, stride=1, padding=1)  # 10 channels for 10 classes
 
     def forward(self, x):
+        x = F.relu(self.conv1(x))
+        # pickle.dump(x, open(f'embeddings/conv1_{THRESH}_float16.pkl', 'wb'))
+
+        x = F.max_pool2d(x, 2)  # Downsample
+        # pickle.dump(x, open(f'embeddings/pool1_{THRESH}_float16.pkl', 'wb'))
+        x = F.relu(self.conv2(x))
+        # pickle.dump(x, open(f'embeddings/conv2_{THRESH}_float16.pkl', 'wb'))
+
+        x = F.max_pool2d(x, 2)  # Downsample
+        # pickle.dump(x, open(f'embeddings/pool2_{THRESH}_float16.pkl', 'wb'))
+        x = F.relu(self.conv3(x))
+        # pickle.dump(x, open(f'embeddings/conv3_{THRESH}_float16.pkl', 'wb'))
+
+        x = F.max_pool2d(x, 2)  # Downsample
+        pickle.dump(x, open(f'embeddings/pool3_{THRESH}_float16.pkl', 'wb'))
+        x = self.conv4(x)  # No activation here, since this is the class feature map
+        # pickle.dump(x, open(f'embeddings/conv4_{THRESH}_float16.pkl', 'wb'))
+        
+        # Global Average Pooling over the remaining spatial dimensions
+        x = F.max_pool2d(x, (1, 1))
+        # pickle.dump(x, open(f'embeddings/pool4_{THRESH}_float16.pkl', 'wb'))
+        x = x.view(x.size(0), -1)  # Flatten to (batch_size, num_classes)
+        
+        # Softmax for class probabilities
+        return F.log_softmax(x, dim=1)
+
+class NaNConvOnlyNet(nn.Module):
+    def __init__(self):
+        super(NaNConvOnlyNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.conv4 = nn.Conv2d(128, 10, kernel_size=3, stride=1, padding=1)  # 10 channels for 10 classes
+
+    def forward(self, x):
         # x = F.relu(self.conv1(x))
         conv1_skipped, conv1_total = count_skip_conv2d(x, self.conv1.weight.data, padding=1, stride=1, threshold=THRESH)
         print(f"Conv1: {conv1_skipped/conv1_total}")
         x = NaNConv2d(train=False,threshold=THRESH, kernel=self.conv1.weight, bias=self.conv1.bias, stride=1, padding=1)(x)
-        # pickle.dump(x, open('/mnist/embeddings/conv1.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/conv1_{THRESH}_float16.pkl', 'wb'))
         x = F.relu(x)
 
         # x = F.max_pool2d(x, 2)  # Downsample
         x, _ = NaNPool2d(max_threshold=POOL_THRESH, rtol_epsilon=EPSILON)(x, (2, 2), (2, 2))
-        # pickle.dump(x, open('/mnist/embeddings/pool1.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/pool1_{THRESH}_float16.pkl', 'wb'))
         # x = F.relu(self.conv2(x))
         conv2_skipped, conv2_total = count_skip_conv2d(x, self.conv2.weight.data, padding=1, stride=1, threshold=THRESH)
         print(f"Conv2: {conv2_skipped/conv2_total} {conv2_skipped} {conv2_total}")
         x = NaNConv2d(train=False,threshold=THRESH, kernel=self.conv2.weight, bias=self.conv2.bias, stride=1, padding=1)(x)
-        # pickle.dump(x, open('/mnist/embeddings/conv2.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/conv2_{THRESH}_float16.pkl', 'wb'))
         x = F.relu(x)
 
         # x = F.max_pool2d(x, 2)  # Downsample
         x, _ = NaNPool2d(max_threshold=POOL_THRESH, rtol_epsilon=EPSILON)(x, (2, 2), (2, 2))
-        # pickle.dump(x, open('/mnist/embeddings/pool2.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/pool2_{THRESH}_float16.pkl', 'wb'))
         # x = F.relu(self.conv3(x))
         conv3_skipped, conv3_total = count_skip_conv2d(x, self.conv3.weight.data, padding=1, stride=1, threshold=THRESH)
         print(f"Conv3: {conv3_skipped/conv3_total}")
         x = NaNConv2d(train=False,threshold=THRESH, kernel=self.conv3.weight, bias=self.conv3.bias, stride=1, padding=1)(x)
-        # pickle.dump(x, open('/mnist/embeddings/conv3.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/conv3_{THRESH}_float16.pkl', 'wb'))
         x = F.relu(x)
 
         # x = F.max_pool2d(x, 2)  # Downsample
         x, _ = NaNPool2d(max_threshold=POOL_THRESH, rtol_epsilon=EPSILON)(x, (2, 2), (2, 2))
-        # pickle.dump(x, open('/mnist/embeddings/pool3.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/pool3_{THRESH}_float16.pkl', 'wb'))
         # x = self.conv4(x)  # No activation here, since this is the class feature map
         conv4_skipped, conv4_total = count_skip_conv2d(x, self.conv4.weight.data, padding=1, stride=1, threshold=THRESH)
         print(f"Conv4: {conv4_skipped/conv4_total}")
         x = NaNConv2d(train=False,threshold=THRESH, kernel=self.conv4.weight, bias=self.conv4.bias, stride=1, padding=1)(x)
-        # pickle.dump(x, open('/mnist/embeddings/conv4.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/conv4_{THRESH}_float16.pkl', 'wb'))
         
         # Global Average Pooling over the remaining spatial dimensions
         # x = F.max_pool2d(x, (1, 1))
         x, _ = NaNPool2d(max_threshold=POOL_THRESH, rtol_epsilon=EPSILON)(x, (1, 1), (1, 1))
-        # pickle.dump(x, open('/mnist/embeddings/pool4.pkl', 'wb'))
+        pickle.dump(x, open(f'embeddings/pool4_{THRESH}_float16.pkl', 'wb'))
         x = x.view(x.size(0), -1)  # Flatten to (batch_size, num_classes)
         
         # Softmax for class probabilities
@@ -115,7 +154,7 @@ class ConvOnlyNet(nn.Module):
 
 
 def test(model, device, test_loader):
-    model.eval()
+    # model.eval()
     test_loss = 0
     correct = 0
     metrics = {'pred': [], 'target': []}
@@ -157,6 +196,54 @@ def cross_validate(model, device, dataset, n_splits=5, batch_size=64):
 
     mean_accuracy = np.mean(fold_accuracies)
     print(f"Cross-Validation Mean Accuracy: {mean_accuracy:.2f}%")
+    return all_metrics, mean_accuracy
+
+
+def cross_validate_reduced(model, device, dataset, n_splits=5, batch_size=64, precision=None):
+    """
+    Perform k-fold cross-validation using optional reduced precision.
+
+    Args:
+        model: The PyTorch model to evaluate.
+        device: The device to run inference on.
+        dataset: The dataset to split.
+        n_splits (int): Number of CV folds.
+        batch_size (int): Batch size for validation.
+        precision (str or None): 'float16', 'bfloat16', or None.
+    """
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    all_metrics = []
+    fold_accuracies = []
+
+    if precision not in (None, 'float16', 'bfloat16'):
+        raise ValueError("precision must be one of: None, 'float16', or 'bfloat16'")
+
+    dtype_map = {
+        'float16': torch.float16,
+        'bfloat16': torch.bfloat16
+    }
+
+    for fold, (train_idx, val_idx) in enumerate(kf.split(dataset)):
+        print(f"\nFold {fold + 1}/{n_splits}")
+
+        model.eval()
+
+        val_subset = Subset(dataset, val_idx)
+        val_loader = torch.utils.data.DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+
+        # Use autocast for reduced precision inference
+        if precision:
+            dtype = dtype_map[precision]
+            with torch.autocast(device_type=device.type, dtype=dtype):
+                metrics, accuracy = test(model, device, val_loader)
+        else:
+            metrics, accuracy = test(model, device, val_loader)
+
+        all_metrics.append(metrics)
+        fold_accuracies.append(accuracy)
+
+    mean_accuracy = np.mean(fold_accuracies)
+    print(f"\nCross-Validation Mean Accuracy: {mean_accuracy:.2f}%")
     return all_metrics, mean_accuracy
 
 
@@ -207,12 +294,13 @@ def main():
 
     dataset = datasets.MNIST('./data', train=False, transform=transform)
 
-    model = ConvOnlyNet().to(device)
+    # model = ConvOnlyNet().to(device) #uninstrumented baseline model
+    model = NaNConvOnlyNet().to(device) #instrumented NaN model
     if args.load_model:
         model.load_state_dict(torch.load(args.model_path))
 
-    all_metrics, mean_accuracy = cross_validate(model, device, dataset, n_splits=5, batch_size=args.test_batch_size)
-    pickle.dump(all_metrics, open(f"nan_test_metrics_{THRESH}.pkl", 'wb'))
+    all_metrics, mean_accuracy = cross_validate_reduced(model, device, dataset, n_splits=5, batch_size=args.test_batch_size, precision='bfloat16')
+    pickle.dump(all_metrics, open(f"nan_test_metrics_{THRESH}_bfloat16.pkl", 'wb'))
 
 
 if __name__ == '__main__':
