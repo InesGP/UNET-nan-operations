@@ -7,6 +7,165 @@ from typing import Tuple
 from math import prod  
 from torch.nn import functional as F
 from typing import Tuple, Optional
+from itertools import product
+
+class Conv2d:
+    def __init__(
+        self,
+        apply_nan: bool = False,
+        padding: int = 0,
+        stride: int = 1,
+        kernel: torch.Tensor = None,
+        bias: torch.Tensor = None,
+        precision: np.dtype = torch.float32,
+        threshold: Optional[float] = None
+    ):
+        self.padding = padding
+        self.stride = stride
+        self.precision = precision
+        self.apply_nan = apply_nan
+
+        self.kernel = kernel.to(dtype=precision)
+
+        if threshold is not None:
+            self.threshold = threshold
+        
+        if bias is not None:
+            self.bias = bias.to(dtype=precision)
+        else:
+            self.bias = None
+
+    # def manual_conv(self, input_padded, n, c_out, h_out, w_out):
+
+    #     acc = 0.0
+    #     for c_in, k_h, k_w in product(range(self.C_in), range(self.K_h), range(self.K_w)):
+    #         i_h = h_out * self.stride + k_h
+    #         i_w = w_out * self.stride + k_w
+    #         acc += input_padded[n][c_in][i_h][i_w] * self.kernel[c_out][c_in][k_h][k_w]
+    #     if self.bias is not None:
+    #         acc += self.bias[c_out]
+
+    #     self.output[n][c_out][h_out][w_out] = acc
+
+    
+    # def nan_conv(self, input_padded, n, c_out, h_out, w_out):
+
+    #     # Calculate NaN ratio
+    #     nan_ratio = torch.isnan(input_padded[n]).sum() / (input_padded[n].size(0) * input_padded[n].size(1) * input_padded[n].size(2))
+    #     if nan_ratio >= self.threshold: 
+    #         self.count += 1
+    #         self.output[n][c_out][h_out][w_out] = float('nan')
+    #     else:
+    #         acc = 0.0
+    #         for c_in in range(self.C_in):
+    #             #Calling torch operations to calculate mean and substitution
+    #             insert = input_padded[n][c_in][~torch.isnan(input_padded[n][c_in])].flatten()
+    #             image_patch = torch.nan_to_num(input_padded[n][c_in], nan=insert.mean())
+
+    #             for k_h in range(self.K_h):
+    #                 for k_w in range(self.K_w):
+    #                     i_h = h_out * self.stride + k_h
+    #                     i_w = w_out * self.stride + k_w
+                        
+    #                     acc += image_patch[i_h][i_w] * self.kernel[c_out][c_in][k_h][k_w]
+    #         if self.bias is not None:
+    #             acc += self.bias[c_out]
+
+    #         self.output[n][c_out][h_out][w_out] = acc
+
+
+    def nan_conv(self, input_padded, n):
+        for c_out, h_out, w_out in product(
+            range(self.kernel.shape[0]),
+            range(self.output.shape[2]),
+            range(self.output.shape[3])
+        ):
+            acc = 0.0
+            nan_count = 0
+            total_count = 0
+            patch_vals = []
+
+            for c_in, k_h, k_w in product(range(self.C_in), range(self.K_h), range(self.K_w)):
+                i_h = h_out * self.stride + k_h
+                i_w = w_out * self.stride + k_w
+                val = input_padded[n][c_in][i_h][i_w]
+                total_count += 1
+                if torch.isnan(val):
+                    nan_count += 1
+                else:
+                    patch_vals.append(val)
+
+            nan_ratio = nan_count / total_count
+            if self.threshold is not None and nan_ratio >= self.threshold:
+                self.output[n][c_out][h_out][w_out] = float('nan')
+                continue
+
+
+            mean_val = torch.stack(patch_vals).mean() if patch_vals else torch.tensor(0.0, dtype=self.precision)
+
+            for c_in, k_h, k_w in product(range(self.C_in), range(self.K_h), range(self.K_w)):
+                i_h = h_out * self.stride + k_h
+                i_w = w_out * self.stride + k_w
+                val = input_padded[n][c_in][i_h][i_w]
+                val = mean_val if torch.isnan(val) else val
+                acc += val * self.kernel[c_out][c_in][k_h][k_w]
+
+            if self.bias is not None:
+                acc += self.bias[c_out]
+
+            self.output[n][c_out][h_out][w_out] = acc
+
+
+
+    def get_val(self, input_padded, mean_val, n, c_in, i_h, i_w):
+        val = input_padded[n][c_in][i_h][i_w]
+        if self.apply_nan:
+            val = mean_val if torch.isnan(val) else val
+        return val
+
+
+    def conv(self, input_padded, n):
+        for c_out, h_out, w_out in product(
+            range(self.kernel.shape[0]), 
+            range(self.output.shape[2]), 
+            range(self.output.shape[3])
+        ):
+            mean_val = None
+
+            if self.apply_nan:
+                patch_vals = []
+                nan_count = 0
+                total_count = self.C_in * self.K_h * self.K_w
+
+                for c_in, k_h, k_w in product(range(self.C_in), range(self.K_h), range(self.K_w)):
+                    i_h = h_out * self.stride + k_h
+                    i_w = w_out * self.stride + k_w
+                    val = input_padded[n][c_in][i_h][i_w]
+                    if torch.isnan(val):
+                        nan_count += 1
+                        if self.threshold and nan_count / total_count >= self.threshold:
+                            self.output[n][c_out][h_out][w_out] = float('nan')
+                            break
+                    else:
+                        patch_vals.append(val)
+                else:
+                    mean_val = sum(patch_vals) / len(patch_vals) if patch_vals else 0.0
+            # If threshold was exceeded and we broke early, skip this iteration
+                if nan_count / total_count >= self.threshold:
+                    continue
+
+            # Compute the convolution
+            acc = sum([
+                self.get_val(input_padded, mean_val, n, c_in, h_out * self.stride + k_h, w_out * self.stride + k_w) *
+                self.kernel[c_out][c_in][k_h][k_w]
+                for c_in, k_h, k_w in product(range(self.C_in), range(self.K_h), range(self.K_w))
+            ])
+
+            if self.bias is not None:
+                acc += self.bias[c_out]
+
+            self.output[n][c_out][h_out][w_out] = acc
+
 
 class NaNConv2d(nn.Module):
     def __init__(
