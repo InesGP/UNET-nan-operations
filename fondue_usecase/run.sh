@@ -8,8 +8,6 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=inesgp99@gmail.com
 
-#vinuyansivakolunthu@gmail.com
-
 # Dynamically set the output file based on the argument
 #LOGFILE="slurm/t${3}_$1_${SLURM_ARRAY_TASK_ID}.out"
 #exec > $LOGFILE 2>&1
